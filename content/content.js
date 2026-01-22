@@ -1,18 +1,65 @@
-function createDynamicIsland() {
-  // 이미 있으면 중복 생성 방지
-  if (document.getElementById("my-island-container")) return;
+let lastVideoId = null;
 
-  const island = document.createElement("div");
-  island.id = "my-island-container";
+function createUI() {
+  if (document.getElementById('my-island-container')) return;
 
-  island.innerHTML = `
-    <div class="island-content">
-    <img src="아이콘_이미지_주소" class="island-icon">
-      <span style="color:#FFC107;">Dynamic Island</span>
-    </div>
-  `;
+  const el = document.createElement('div');
+  el.id = 'my-island-container';
+  el.textContent = 'Ready to collect videos...';
+  el.style.position = 'fixed';
+  el.style.top = '12px';
+  el.style.left = '50%';
+  el.style.transform = 'translateX(-50%)';
+  el.style.zIndex = '9999';
+  el.style.background = 'black';
+  el.style.color = 'white';
+  el.style.padding = '6px 12px';
+  el.style.borderRadius = '999px';
 
-  document.body.appendChild(island);
+  document.body.appendChild(el);
 }
 
-createDynamicIsland();
+function getVideoId(url) {
+  try {
+    const u = new URL(url);
+
+    // 롱폼
+    const v = u.searchParams.get("v");
+    if (v) return v;
+
+    // 쇼츠
+    if (u.pathname.startsWith("/shorts/")) {
+      return u.pathname.split("/shorts/")[1]?.split("/")[0];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function updateUI(videoId) {
+  const el = document.getElementById('my-island-container');
+  if (el) el.textContent = `Video ID: ${videoId}`;
+}
+
+function processVideo() {
+  const videoId = getVideoId(location.href);
+  if (!videoId || videoId === lastVideoId) return;
+
+  lastVideoId = videoId;
+  console.log('[Content Script] New video:', videoId);
+
+  updateUI(videoId);
+
+  chrome.runtime.sendMessage({
+    type: 'NEW_VIDEO',
+    videoId,
+    url: location.href
+  });
+}
+
+// 실행
+createUI();
+processVideo();
+window.addEventListener('yt-navigate-finish', processVideo);
