@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "QolorAI",
+  "version": "0.1.0",
+  "description": "YouTube 영상 신뢰도 표시 확장 프로그램",
+
+  "permissions": ["activeTab"],
+  "host_permissions": ["https://www.youtube.com/*"],
+
+  "background": {
+    "service_worker": "background/background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/content.js"],
+      "css": ["style.css"]
+    }
+  ],
+
+  "action": {
+    "default_title": "QolorAI"
+  }
+}
