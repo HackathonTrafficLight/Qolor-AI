@@ -1,5 +1,6 @@
 let lastVideoId = null;
 
+// UI 생성
 function createUI() {
   if (document.getElementById('my-island-container')) return;
 
@@ -15,47 +16,43 @@ function createUI() {
   el.style.color = 'white';
   el.style.padding = '6px 12px';
   el.style.borderRadius = '999px';
-
+  el.style.fontSize = '14px';
   document.body.appendChild(el);
 }
 
+// URL에서 videoID 추출
 function getVideoId(url) {
   try {
     const u = new URL(url);
-
-    // 롱폼
     const v = u.searchParams.get("v");
     if (v) return v;
-
-    // 쇼츠
-    if (u.pathname.startsWith("/shorts/")) {
-      return u.pathname.split("/shorts/")[1]?.split("/")[0];
-    }
-
+    if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
     return null;
   } catch {
     return null;
   }
 }
 
-function updateUI(videoId) {
+// UI 업데이트
+function updateUI(videoId, status) {
   const el = document.getElementById('my-island-container');
-  if (el) el.textContent = `Video ID: ${videoId}`;
+  if (el) el.textContent = `Video ID: ${videoId} → ${status}`;
 }
 
+// videoID 처리
 function processVideo() {
   const videoId = getVideoId(location.href);
   if (!videoId || videoId === lastVideoId) return;
 
   lastVideoId = videoId;
-  console.log('[Content Script] New video:', videoId);
-
-  updateUI(videoId);
+  console.log('[Content Script] New video:', videoId); // 페이지 콘솔에서 확인 가능
 
   chrome.runtime.sendMessage({
     type: 'NEW_VIDEO',
     videoId,
     url: location.href
+  }, (response) => {
+    updateUI(videoId, response?.status || "Error");
   });
 }
 
