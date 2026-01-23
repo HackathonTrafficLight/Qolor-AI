@@ -1,18 +1,42 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Video Collector",
-  "version": "2.0",
-  "description": "Collects and saves video IDs from YouTube to Firebase.",
-  "permissions": ["storage", "tabs"],
+  "name": "My Video Collector",
+  "version": "1.0",
+  "description": "Collects videos from YouTube and other sites.",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://*.googleapis.com/*"
+  ],
   "background": {
     "service_worker": "background/background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["content/content.js"],
-      "css": ["style.css"]
+      "matches": [
+        "https://www.youtube.com/watch*",
+        "https://www.youtube.com/shorts/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "style.css"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "style.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
