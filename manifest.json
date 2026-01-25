@@ -2,18 +2,31 @@
   "manifest_version": 3,
   "name": "YouTube Video Collector",
   "version": "2.0",
-  "description": "Collects and saves video IDs from YouTube to Firebase.",
-  "permissions": ["storage", "tabs"],
-  "host_permissions": ["*://*.youtube.com/*"],
+  "description": "Collects and saves video IDs, OCR text, and Gemini analysis from YouTube to Firebase.",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "https://vision.googleapis.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
   "background": {
     "service_worker": "background/background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["content/content.js"],
-      "css": ["style.css"]
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "style.css"
+      ]
     }
   ]
 }
