@@ -11,12 +11,10 @@ console.log("✅ Firebase initialized in Service Worker");
 // 🚨 중요: 여기에 자신의 API 키를 입력하세요.
 // =================================================================
 const VISION_API_KEY = "YOUR_GOOGLE_VISION_API_KEY";
-const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"; // 👈 Gemini API 키
+const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY";
 
 const VISION_API_URL = `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`;
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
-
-
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
 // 메시지 리스너
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "NEW_VIDEO") {
@@ -116,18 +114,7 @@ async function handleNewVideo(db, videoId, url) {
 
 // 💎 Gemini API 호출 함수 (새로 추가된 함수)
 async function analyzeTextWithGemini(ocrText, videoTitle) {
-    const prompt = `Analyze the reliability of the following text, which was extracted from a YouTube video's thumbnail and title. The key is to determine if the thumbnail text is clickbait or sensational compared to the video title.
-
-- Video Title: "${videoTitle}"
-- Thumbnail OCR Text: "${ocrText}"
-
-Based on this, classify the reliability into one of three categories: "High", "Medium", or "Low". Provide a brief, one-sentence explanation for your classification. 
-
-Your entire response MUST be a valid JSON object with two keys: "reliability" and "reason".
-
-Example:
-- Input: Title="Simple Pasta Recipe", OCR="💥MIND-BLOWING PASTA HACK! YOU WON'T BELIEVE IT!💥"
-- Output: {"reliability": "Low", "reason": "The thumbnail text uses sensational and exaggerated language that is not reflected in the simple title."}`;
+    const prompt = `Analyze the reliability of the following text, which was extracted from a YouTube video's thumbnail and title. The key is to determine if the thumbnail text is clickbait or sensational compared to the video title.\n\n- Video Title: "${videoTitle}"\n- Thumbnail OCR Text: "${ocrText}"\n\nBased on this, classify the reliability into one of three categories: "High", "Medium", or "Low". Provide a brief, one-sentence explanation for your classification. \n\nYour entire response MUST be a valid JSON object with two keys: "reliability" and "reason".\n\nExample:\n- Input: Title="Simple Pasta Recipe", OCR="💥MIND-BLOWING PASTA HACK! YOU WON'T BELIEVE IT!💥"\n- Output: {"reliability": "Low", "reason": "The thumbnail text uses sensational and exaggerated language that is not reflected in the simple title."}`;
 
     const geminiResponse = await fetch(GEMINI_API_URL, {
         method: 'POST',
