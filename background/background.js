@@ -88,7 +88,7 @@ async function handleNewVideo(db, videoId, url) {
         try {
             console.log("[Background] 🧠 Calling Gemini API for analysis...");
             geminiAnalysis = await analyzeTextWithGemini(ocrText, title);
-            console.log(`[Background] ✨ Gemini Analysis: ${geminiAnalysis.reliability} - ${geminiAnalysis.reason}`);
+            // console.log(`[Background] ✨ Gemini Analysis: ${geminiAnalysis.reliability} - ${geminiAnalysis.reason}`);
         } catch (geminiError) {
             console.error("[Background] Gemini Error:", geminiError);
             geminiAnalysis = { reliability: "Analysis failed", reason: geminiError.message };
@@ -104,39 +104,58 @@ async function handleNewVideo(db, videoId, url) {
       title,
       thumbnailUrl,
       ocrText,
-      geminiAnalysis, // 👈 분석 결과 저장
+      geminiAnalysis, 
       collectedAt: serverTimestamp()
     });
     console.log(`[Background] ✅ Saved to Firestore: ${videoId}`);
+    console.log('-------------------------------');
     return { status: "Saved" };
   }
 }
 
-// 💎 Gemini API 호출 함수 (새로 추가된 함수)
+// 💎 Gemini 3 분석 함수 (콘솔 출력 강화 버전)
 async function analyzeTextWithGemini(ocrText, videoTitle) {
-    const prompt = `Analyze the reliability of the following text, which was extracted from a YouTube video's thumbnail and title. The key is to determine if the thumbnail text is clickbait or sensational compared to the video title.\n\n- Video Title: "${videoTitle}"\n- Thumbnail OCR Text: "${ocrText}"\n\nBased on this, classify the reliability into one of three categories: "High", "Medium", or "Low". Provide a brief, one-sentence explanation for your classification. \n\nYour entire response MUST be a valid JSON object with two keys: "reliability" and "reason".\n\nExample:\n- Input: Title="Simple Pasta Recipe", OCR="💥MIND-BLOWING PASTA HACK! YOU WON'T BELIEVE IT!💥"\n- Output: {"reliability": "Low", "reason": "The thumbnail text uses sensational and exaggerated language that is not reflected in the simple title."}`;
+  const prompt = `
+    당신은 유튜브 콘텐츠 신뢰도 분류 전문가입니다. 제공된 데이터를 바탕으로 아래 가이드라인에 따라 분석하세요.
+    응답은 반드시 JSON 형식으로만 하세요.
 
-    const geminiResponse = await fetch(GEMINI_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    });
+    [카테고리 분류 가이드]
+    A. 신뢰도 판정 대상: 정치/사회, 경제/금융, 의학/건강, 과학/기술, 생활 법률
+    B. 신뢰도 판정 비대상: 엔터테인먼트, 일상/Vlog, 취미/스포츠, 예술/디자인, 단순 유머
 
-    if (!geminiResponse.ok) {
-        const errorBody = await geminiResponse.text();
-        throw new Error(`Gemini API request failed: ${geminiResponse.status} ${geminiResponse.statusText} - ${errorBody}`);
+    [출력 JSON 구조]
+    {
+      "category_group": "A" 또는 "B",
+      "specific_category": "카테고리명",
+      "reliability": "High/Medium/Low",
+      "score": 0~100점 사이의 숫자,
+      "reason": "한 문장 요약"
     }
 
-    const geminiData = await geminiResponse.json();
-    const responseText = geminiData.candidates[0].content.parts[0].text;
-    
-    // 응답이 JSON 형식이 되도록 정리
-    const jsonString = responseText.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+    제목: "${videoTitle}"
+    썸네일 OCR: "${ocrText}"
+  `;
 
-    try {
-        return JSON.parse(jsonString);
-    } catch (e) {
-        console.error("[Background] Failed to parse Gemini response as JSON:", responseText);
-        throw new Error("Failed to parse Gemini's JSON response.");
-    }
+  const res = await fetch(GEMINI_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+  });
+
+  const data = await res.json();
+  const text = data.candidates[0].content.parts[0].text;
+  const jsonStr = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+  const result = JSON.parse(jsonStr);
+
+  // 1. 기존에 찍히던 상세 분석 로그 (유지)
+  console.log(`[Background] ✨ Gemini Analysis: ${result.reliability} (${result.score}점) - ${result.reason}`);
+
+  // 2. 추가된 카테고리 판정 결과 로그 (신규 추가)
+  if (result.category_group === "A") {
+    console.log(`%c[판정 결과] 🔴 신뢰도 판정 대상군입니다. (${result.specific_category})`, "color: #ff4d4d; font-weight: bold; border: 1px solid #ff4d4d; padding: 2px 5px; border-radius: 4px;");
+  } else {
+    console.log(`%c[판정 결과] 🟡 신뢰도 판정 비대상군입니다. (${result.specific_category})`, "color: #ffcc00; font-weight: bold; border: 1px solid #ffcc00; padding: 2px 5px; border-radius: 4px;");
+  }
+
+  return result;
 }
