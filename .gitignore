@@ -1,4 +1,5 @@
 .env
 node_modules
+
 # Firebase config
 firebase-config.js
