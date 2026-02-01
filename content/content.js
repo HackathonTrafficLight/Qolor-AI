@@ -149,7 +149,7 @@ function processVideo() {
 
     if (response && response.analysisResult) {
       const { score } = response.analysisResult;
-      if (score >= 70) {
+      if (score >= 80) {
         updateUI("Verified", "verified");
       } else {
         updateUI("Misleading", "misleading");

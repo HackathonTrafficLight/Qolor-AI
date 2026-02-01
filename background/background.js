@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'https://www.
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// API 설정
+// 🔑 API 키 설정
 const VISION_API_KEY = "VISION_API_KEY";
 const GEMINI_API_KEY = "GEMINI_API_KEY";
 const SERPER_API_KEY = "SERPER_API_KEY";
@@ -28,21 +28,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// 분석 대상 카테고리
+const TARGET_CATEGORIES = [
+    "News & Politics", "Nonprofits & Activism", "Science & Technology", 
+    "Education", "People & Blogs", "Howto & Style", "Auto & Vehicles"
+];
+
 async function handleNewVideo(db, videoId, url) {
   const videoRef = doc(db, "videos", videoId);
   const docSnap = await getDoc(videoRef);
+  
   if (docSnap.exists()) {
-    console.log("Document already exists, returning data from DB");
     const existingData = docSnap.data();
+    if (existingData.status === "Not Analyzed") return { status: "Not Analyzed" };
     return { status: "Already Exists", analysisResult: existingData.analysisResult };
   }
 
   const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const response = await fetch(youtubeUrl);
   const html = await response.text();
+
+  // 메타데이터 추출
   const title = html.match(/<meta property="og:title" content="(.*?)">/)?.[1] || "Title not found";
   const thumbnailUrl = html.match(/<meta property="og:image" content="(.*?)">/)?.[1] || "Thumbnail not found";
+  const channelMatch = html.match(/"author":"(.*?)"/);
+  const channelName = channelMatch ? channelMatch[1] : "Unknown Channel";
 
+  // 카테고리 추출 및 디코딩
+  const categoryMatch = html.match(/"category":"(.*?)"/);
+  let videoCategory = categoryMatch ? categoryMatch[1] : "Unknown";
+  try { videoCategory = JSON.parse(`"${videoCategory}"`); } catch (e) { videoCategory = videoCategory.replace(/\\u0026/g, "&"); }
+
+  console.log(`📺 채널: [${channelName}], 카테고리: [${videoCategory}]`);
+
+  // 카테고리 필터링
+  if (!TARGET_CATEGORIES.includes(videoCategory) && videoCategory !== "Unknown") {
+      await setDoc(videoRef, { videoId, status: "Not Analyzed", category: videoCategory, collectedAt: serverTimestamp() });
+      return { status: "Not Analyzed" };
+  }
+
+  // OCR 추출
   let ocrText = "";
   try {
       const visionRes = await fetch(VISION_API_URL, {
@@ -54,90 +79,118 @@ async function handleNewVideo(db, videoId, url) {
       ocrText = data.responses?.[0]?.fullTextAnnotation?.text.replace(/\n/g, ' ') || "";
   } catch (e) { console.error("OCR Error"); }
 
-  // [STEP 1] 카테고리 필터
-  const isTarget = await checkCategory(ocrText, title);
-  if (!isTarget) {
-      console.log("%c🟡 판단 종료: 분석 비대상 카테고리 (노란색 불빛)", "color: #FFC107; font-weight: bold;");
-      return { status: "Not Analyzed" };
-  }
+  // 정밀 분석 실행
+  const analysisResult = await analyzeWithSerper(ocrText, title, videoCategory, channelName);
+  
+  await setDoc(videoRef, { videoId, url, title, channelName, ocrText, category: videoCategory, analysisResult, collectedAt: serverTimestamp() });
 
-  // [STEP 2] 정밀 분석 진행
-  const analysisResult = await analyzeWithSerper(ocrText, title);
-  await setDoc(videoRef, { videoId, url, title, ocrText, analysisResult, collectedAt: serverTimestamp() });
+  if (analysisResult.source_type === 'C') return { status: "Not Analyzed" };
+
   return { status: "Saved", analysisResult };
 }
 
-async function checkCategory(ocrText, videoTitle) {
+async function analyzeWithSerper(ocrText, videoTitle, videoCategory, channelName) {
     try {
-        const res = await fetch(GEMINI_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: `제목: ${videoTitle}, OCR: ${ocrText}. 정치, 경제, 사회, 의학, 과학, 법률 중 하나라면 TARGET, 그 외는 SKIP이라고 답해.` }] }] })
-        });
-        const data = await res.json();
-        return data.candidates[0].content.parts[0].text.includes("TARGET");
-    } catch (e) { return true; }
-}
-
-/**
- * [수정됨] 8가지 정밀 규칙 및 뉴스 공신력 기반 채점 로직
- */
-async function analyzeWithSerper(ocrText, videoTitle) {
-    try {
-        // 1. 최적화된 검색어 추출
+        // ------------------------------------------------------------------
+        // [Step 1] 검색어 생성
+        // ------------------------------------------------------------------
         const queryGenPrompt = `
         제목: "${videoTitle}"
         OCR: "${ocrText}"
+        채널명: "${channelName}"
         
         위 영상의 핵심 주장이나 사건을 팩트체크하기 위해 구글 뉴스 검색에 입력할 '간결한 요약 검색어'을 하나만 만들어줘.
+        단, 유튜버 채널명은 검색어에서 반드시 빼야 해.
         예시: "트럼프 한국 상품 관세 인상 보도", "정부 비트코인 거래 금지 발표 여부"
         다른 설명 없이 요약 검색어만 출력해.`;
+        
         const queryRes = await fetch(GEMINI_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: queryGenPrompt }] }] })
         });
         const queryData = await queryRes.json();
-        const optimizedQuery = queryData.candidates[0].content.parts[0].text.trim();
+        const optimizedQuery = queryData.candidates[0].content.parts[0].text.trim().replace(/["']/g, "");
 
-        // 2. Serper 뉴스 검색
-        const serperRes = await fetch("https://google.serper.dev/news", {
+        console.log(`🔎 생성된 검색어: [${optimizedQuery}]`);
+
+        // ------------------------------------------------------------------
+        // [Step 2] 검색 실행 (뉴스 검색 1차 -> 실패시 웹 검색 2차)
+        // ------------------------------------------------------------------
+        let searchResults = [];
+        let usedSearchType = "NEWS";
+
+        // 1. 뉴스 검색
+        const serperNewsRes = await fetch("https://google.serper.dev/news", {
             method: 'POST',
             headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
             body: JSON.stringify({ q: optimizedQuery, gl: "kr", hl: "ko" })
         });
-        const searchData = await serperRes.json();
-        const newsItems = searchData.news && searchData.news.length > 0 ? searchData.news.slice(0, 5) : [];
-        const context = newsItems.map(n => `[출처: ${n.source}] 제목: ${n.title} / 내용: ${n.snippet}`).join("\n\n");
+        const newsData = await serperNewsRes.json();
+
+        if (newsData.news && newsData.news.length > 0) {
+            searchResults = newsData.news;
+        } else {
+            // 2. 뉴스 없으면 웹 검색 (이건 무조건 켜두는 게 좋습니다)
+            console.log("⚠️ 뉴스 결과 0건 -> 일반 웹 검색 전환");
+            usedSearchType = "WEB";
+            const serperWebRes = await fetch("https://google.serper.dev/search", {
+                method: 'POST',
+                headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ q: optimizedQuery, gl: "kr", hl: "ko" })
+            });
+            const webData = await serperWebRes.json();
+            searchResults = webData.organic || [];
+        }
+
+        const newsItems = searchResults.slice(0, 5);
+        const context = newsItems.map(n => `[출처: ${n.source || n.title}] 제목: ${n.title} / 내용: ${n.snippet}`).join("\n\n");
         const referenceUrls = newsItems.map(n => n.link);
 
-        // 3. 8가지 정밀 규칙 프롬프트 적용
+        // ------------------------------------------------------------------
+        // [Step 3] ACCA 평가 (새로운 규칙 적용)
+        // ------------------------------------------------------------------
         const finalPrompt = `
-        당신은 쇼츠 가짜뉴스 정밀 판별기입니다. 아래 8가지 규칙과 뉴스 대조를 통해 100점 만점에서 감점하세요.
+        System Instruction: Multimodal Information Integrity Assessment
+        Written by Aaron
+        
+        Role: You are the Automated Content Credibility Assessor (ACCA).
+        Objective: Quantify discrepancy between "Perceived Urgency" and "Probable Factual Accuracy".
+        
+        [INPUT DATA]
+        - Channel: "${channelName}"
+        - Category: "${videoCategory}"
+        - Title: "${videoTitle}"
+        - OCR: "${ocrText}"
+        - Fact Check Context (${usedSearchType}): 
+        ${context || "No relevant search results found."}
 
-        [영상 정보] 제목: ${videoTitle}, OCR: ${ocrText}
-        [뉴스 검색 결과]
-        ${context || "제도권 언론 보도 전무함"}
+        ---
+        PART 1: Taxonomy
+        A: Institutional (Broadcasters/Gov) -> [Mitigation 0.5]
+        B: Independent (YouTubers) -> [No Mitigation]
+        C: Entertainment -> [Bypass] (Score 100)
 
-        [분석 및 감점 규칙]
-        1. 텍스트 선정성: '충격', '경악', 'ㄷㄷ', '실제상황' 등 어휘 사용 (-10점)
-        2. 단정적 언어: 미확정 사건을 '~사망', '~확정' 등 위장 (-10점)
-        3. 정보원 불투명성: '관계자 폭로', '외신에 따르면' 등 모호한 주어 (-25점)
-        4. 논리적 괴리: 썸네일은 확정, 제목은 의문문 등 낚시 패턴 (-25점)
-        5. 권위 도용: [속보], [단독] 태그나 언론사 형식 사칭 (-25점)
-        6. 선동/혐오 어휘: '참교육', '폭망', '퇴출', '참사' 등 분노 유발 (-10점)
-        7. 그래픽 위기감: '방금 터진', '삭제 예정' 등 시간 압박 시각화 (-10점)
-        8. **뉴스 공신력 대조(중요)**:
-           - 주요 언론사 보도가 있다면 점수 유지.
-           - 유튜브/커뮤니티엔 있으나 제도권 언론 보도가 전무하면 (-25점)
-           - '사실무근', '루머' 등 반박/팩트체크 기사가 존재하면 (-50점)
+        PART 2: 5 Dimensions (Score Deductions)
+        1. Certainty (0-30): Speculation as Fact
+        2. Hyperbole (0-20): Emotional words
+        3. Obfuscation (0-15): Fake tags
+        4. Dissonance (0-15): Title-Thumbnail mismatch
+        5. Fabrication (0-20): Fake scenarios
 
-        반드시 아래 JSON 형식으로만 답변하세요:
+        PART 3: Scoring
+        - Sum Penalties. 
+        - Apply Mitigation (x0.5 for Type A).
+        - Final Score = 100 - Final Penalty.
+        - Threshold: Safe(80-100), Misleading(<80).
+
+        PART 4: Output JSON
         {
-          "score": 최종 점수,
-          "is_verified": 뉴스 일치 여부(true/false),
-          "deductions": [{"rule_no": "번호", "reason": "감점 사유", "points": "점수"}],
-          "reason": "종합 평"
+          "source_type": "A"/"B"/"C",
+          "average_score": 0-100,
+          "color": "green"/"red",
+          "primary_violation": "string",
+          "summary_explanation": "Korean summary"
         }`;
 
         const finalRes = await fetch(GEMINI_API_URL, {
@@ -153,31 +206,49 @@ async function analyzeWithSerper(ocrText, videoTitle) {
         const resultText = finalData.candidates[0].content.parts[0].text;
         const result = JSON.parse(resultText.match(/\{[\s\S]*\}/)[0]);
 
-        // 🖥️ 최종 콘솔 리포트 출력
-        console.group(`🚨 쇼츠 정밀 팩트체크: ${videoTitle}`);
-        console.log(`📡 실제 검색어: "${optimizedQuery}"`);
-        console.log(`📊 최종 점수: ${result.score}점 (뉴스 확인: ${result.is_verified ? "✅" : "❌"})`);
+        // Type A 보정
+        if (result.source_type === 'A' && result.average_score < 85) {
+            result.average_score = 95;
+            result.color = "green";
+            result.summary_explanation = `[제도권 언론(${channelName}) 보정] ${result.summary_explanation}`;
+        }
+
+        const finalResult = {
+            source_type: result.source_type,
+            score: result.average_score,
+            is_verified: result.average_score >= 80,
+            primary_violation: result.primary_violation,
+            reason: result.summary_explanation,
+            original_result: result
+        };
+
+        // 콘솔 리포트
+        console.group(`🚨 ACCA 분석 결과: ${videoTitle}`);
+        console.log(`📺 채널: ${channelName}`);
+        console.log(`🔎 검색어: ${optimizedQuery}`);
+        console.log(`📊 점수: ${finalResult.score}점 (${finalResult.source_type})`);
         
-        if (result.deductions.length > 0) {
-            console.log("❌ 감점 내역:");
-            result.deductions.forEach(d => console.log(`   - [규칙 ${d.rule_no}] ${d.reason} (-${d.points}점)`));
-        } else {
-            console.log("✅ 감점 항목 없음 (신뢰 가능)");
+        // 점수와 함께 색상 표시
+        const scoreIcon = finalResult.score >= 80 ? "✅" : "❌";
+        console.log(`${scoreIcon} 점수: ${finalResult.score}점`);
+
+        // 왜 깎였는지 알려줌
+        if (finalResult.source_type !== 'C') {
+            console.log(`⚠️ 주요 위반: ${finalResult.primary_violation}`); // 가장 큰 감점 요인 (예: Dimension 2: Hyperbole)
+            console.log(`📝 상세 분석: ${finalResult.reason}`); // AI의 한글 설명
         }
 
         if (referenceUrls.length > 0) {
-            console.log("🔗 참고한 공신력 있는 기사:");
+            console.log("🔗 참고 기사:");
             referenceUrls.forEach((url, idx) => console.log(`   [${idx + 1}] ${url}`));
         } else {
-            console.warn("⚠️ 제도권 언론사의 관련 보도가 발견되지 않았습니다.");
+            console.log("⚠️ 참고 기사 없음");
         }
-        
-        console.log(`📝 종합 분석: ${result.reason}`);
         console.groupEnd();
 
-        return { ...result, reference_urls: referenceUrls };
+        return { ...finalResult, reference_urls: referenceUrls };
     } catch (error) {
         console.error("분석 중 에러:", error);
-        return { score: 50, reason: "분석 실패" };
+        return { score: 50, reason: "Error", source_type: "B" };
     }
 }
