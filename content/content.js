@@ -1,25 +1,50 @@
-// 상태별 SVG 아이콘 정의
+/**
+ * ==========================================
+ * 1. ASSETS & CONFIGURATION
+ * ==========================================
+ */
+const CONFIG = {
+  SELECTORS: {
+    CONTAINER: 'my-island-container', // ID
+    YOUTUBE_HEADER: '#masthead #center',
+    ICON_WRAPPER: '.icon'
+  },
+  CLASSES: {
+    DEFAULT: 'default',
+    ANALYZING: 'analyzing',
+    VERIFIED: 'verified',
+    NOT_ANALYZED: 'not-analyzed',
+    MISLEADING: 'misleading'
+  },
+  TEXT: {
+    DEFAULT: 'YouTube<br>Reliability Analysis',
+    ANALYZING: 'Analysis',
+    VERIFIED: 'Verified',
+    MISLEADING: 'Misleading',
+    NOT_ANALYZED: 'Not Analyzed',
+    ERROR: 'Extension Error'
+  },
+  THRESHOLDS: {
+    SAFE_SCORE: 80
+  }
+};
+
 const ICONS = {
-  // ✅ [Verified] 체크 아이콘
   verified: `
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect x="2.5" y="2.5" width="19" height="19" rx="9.5" fill="#04B014" fill-opacity="0.1"/>
     <rect x="2.5" y="2.5" width="19" height="19" rx="9.5" stroke="#04B014"/>
     <path d="M8 12.5L11 15L16 9" stroke="#04B014" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  `,
+    </svg>`,
 
-  // ❌ [Misleading] X 아이콘
   misleading: `
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect x="2.5" y="2.5" width="19" height="19" rx="9.5" fill="#DC0000" fill-opacity="0.1"/>
     <rect x="2.5" y="2.5" width="19" height="19" rx="9.5" stroke="#DC0000"/>
     <path d="M16 8L8 16" stroke="#DC0000" stroke-width="1.25" stroke-linecap="round"/>
     <path d="M16 16L8 8" stroke="#DC0000" stroke-width="1.25" stroke-linecap="round"/>
-    </svg>
-  `,
+    </svg>`,
 
-  // 🔍 [Not Analyzed] 돋보기 아이콘
   "not-analyzed": `
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <g clip-path="url(#clip0_438_1887)">
@@ -29,15 +54,9 @@ const ICONS = {
     <path d="M15.6464 16.3536C15.8417 16.5488 16.1583 16.5488 16.3536 16.3536C16.5488 16.1583 16.5488 15.8417 16.3536 15.6464L16 16L15.6464 16.3536ZM13.5 13.5L13.1464 13.8536L15.6464 16.3536L16 16L16.3536 15.6464L13.8536 13.1464L13.5 13.5Z" fill="#FFAA00"/>
     </g>
     <rect x="2.5" y="2.5" width="19" height="19" rx="9.5" stroke="#FFAA00"/>
-    <defs>
-    <clipPath id="clip0_438_1887">
-    <rect x="2" y="2" width="20" height="20" rx="10" fill="white"/>
-    </clipPath>
-    </defs>
-    </svg>
-  `,
+    <defs><clipPath id="clip0_438_1887"><rect x="2" y="2" width="20" height="20" rx="10" fill="white"/></clipPath></defs>
+    </svg>`,
   
-  // 🔄 [Default] Qolor-AI 기본 로고 아이콘
   default: `
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect x="16.8198" y="18.0361" width="2.13333" height="1.96786" transform="rotate(-55.7178 16.8198 18.0361)" fill="#989898"/>
@@ -46,141 +65,176 @@ const ICONS = {
     <path d="M16.7471 5.56067C17.695 6.25945 18.4769 7.15888 19.0371 8.19475L17.1582 9.21075C16.7476 8.45146 16.1744 7.79218 15.4796 7.27997L16.7471 5.56067Z" fill="#FFAA00"/>
     <path d="M19.2582 8.63573C19.7534 9.70415 20.0067 10.8687 19.9999 12.0463L17.8639 12.034C17.8689 11.1708 17.6833 10.3171 17.3203 9.53399L19.2582 8.63573Z" fill="#FF1B1B"/>
     <path d="M10.3999 14.8442L14.5572 11.9997L10.3999 9.15527V14.8442Z" fill="#989898"/>
-    </svg>
-  `
+    </svg>`
 };
 
-let lastVideoId = null;
-
-// UI를 생성하고 삽입하는 함수
-function createAndInsertUI() {
-  if (document.getElementById('my-island-container')) return;
-
-  const el = document.createElement('div');
-  el.id = 'my-island-container';
-  el.innerHTML = `<span class="icon"></span><span>...</span>`; 
-
-  const mastheadCenter = document.querySelector('#masthead #center');
-  if (mastheadCenter) {
-    mastheadCenter.before(el);
-  } else {
-    document.body.appendChild(el);
-  }
-}
-
-// 특정 요소가 나타날 때까지 기다리는 함수
-function waitForElement(selector, callback) {
-  const interval = setInterval(() => {
-    const element = document.querySelector(selector);
-    if (element) {
-      clearInterval(interval);
-      callback();
+/**
+ * ==========================================
+ * 2. UTILITY CLASSES
+ * ==========================================
+ */
+const VideoUtils = {
+  /** URL에서 Video ID 추출 */
+  extractId(url) {
+    try {
+      const u = new URL(url);
+      const v = u.searchParams.get("v");
+      if (v) return v;
+      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
+      return null;
+    } catch {
+      return null;
     }
-  }, 100);
-}
-
-// URL에서 videoID 추출
-function getVideoId(url) {
-  try {
-    const u = new URL(url);
-    const v = u.searchParams.get("v");
-    if (v) return v;
-    if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
-    return null;
-  } catch {
-    return null;
   }
-}
+};
 
-// UI 상태를 업데이트하는 통합 함수 (SVG 아이콘 적용됨)
-function updateUI(text, status) {
-  const el = document.getElementById('my-island-container');
-  if (el) {
-    el.innerHTML = `<span class="icon"></span><span>${text}</span>`;
-    const iconEl = el.querySelector('.icon');
+const DomUtils = {
+  /** 요소가 DOM에 나타날 때까지 대기 */
+  waitForElement(selector, callback) {
+    const interval = setInterval(() => {
+      const element = document.querySelector(selector);
+      if (element) {
+        clearInterval(interval);
+        callback(element);
+      }
+    }, 100);
+  },
 
-    // 모든 상태 클래스 제거
-    el.classList.remove('default', 'analyzing', 'verified', 'not-analyzed', 'misleading');
+  /** 분석 중일 때 보여줄 로딩 애니메이션 스팬 생성 */
+  getLoadingSpans() {
+    return '<span></span>'.repeat(6);
+  }
+};
 
-    // 새 상태 클래스 추가
-    if (status) {
-      el.classList.add(status);
-    }
+/**
+ * ==========================================
+ * 3. UI MANAGER (VIEW)
+ * ==========================================
+ * 화면에 위젯을 그리고 상태를 업데이트하는 역할
+ */
+const UIManager = {
+  element: null,
 
-    // 아이콘 렌더링 로직
-    if (status === 'analyzing') {
-        // 분석 중 애니메이션은 CSS span으로 처리
-        iconEl.innerHTML = '<span></span><span></span><span></span><span></span><span></span><span></span>'; 
-    } else if (ICONS[status]) {
-        // SVG 코드 주입
-        iconEl.innerHTML = ICONS[status];
+  /** UI 초기 생성 및 DOM 삽입 */
+  mount() {
+    // 기존 요소 제거 (중복 방지)
+    const existing = document.getElementById(CONFIG.SELECTORS.CONTAINER);
+    if (existing) existing.remove();
+
+    // 새 요소 생성
+    this.element = document.createElement('div');
+    this.element.id = CONFIG.SELECTORS.CONTAINER;
+    this.element.innerHTML = `<span class="icon"></span><span>...</span>`;
+
+    // 유튜브 헤더에 삽입, 실패 시 body에 삽입
+    const masthead = document.querySelector(CONFIG.SELECTORS.YOUTUBE_HEADER);
+    if (masthead) {
+      masthead.before(this.element);
     } else {
-        // 매칭 안될 시 기본값 아이콘 사용
-        iconEl.innerHTML = ICONS['default'];
+      document.body.appendChild(this.element);
+    }
+  },
+
+  /** UI 상태 업데이트 (텍스트, 클래스, 아이콘) */
+  updateState(text, statusClass) {
+    const el = document.getElementById(CONFIG.SELECTORS.CONTAINER);
+    if (!el) return;
+
+    // 1. 텍스트 업데이트
+    el.innerHTML = `<span class="icon"></span><span>${text}</span>`;
+    const iconEl = el.querySelector(CONFIG.SELECTORS.ICON_WRAPPER);
+
+    // 2. 클래스 초기화 및 재설정
+    el.classList.remove(...Object.values(CONFIG.CLASSES));
+    if (statusClass) el.classList.add(statusClass);
+
+    // 3. 아이콘 렌더링
+    if (statusClass === CONFIG.CLASSES.ANALYZING) {
+      iconEl.innerHTML = DomUtils.getLoadingSpans();
+    } else {
+      iconEl.innerHTML = ICONS[statusClass] || ICONS.default;
     }
   }
-}
+};
 
-// videoID 처리
-function processVideo() {
-  const videoId = getVideoId(location.href);
+/**
+ * ==========================================
+ * 4. APP CONTROLLER (LOGIC)
+ * ==========================================
+ * 메시지 통신 및 전체 로직 조율
+ */
+const App = {
+  init() {
+    // 유튜브 헤더 로딩 대기 후 시작
+    DomUtils.waitForElement(CONFIG.SELECTORS.YOUTUBE_HEADER, () => {
+      this.handleNavigation();
+    });
 
-  // 비디오 페이지가 아니면 기본 상태로 UI 업데이트 후 종료
-  if (!videoId) {
-    updateUI('YouTube<br>Reliability Analysis', 'default');
-    return;
-  }
+    // 유튜브 페이지 이동 감지
+    window.addEventListener('yt-navigate-finish', () => this.handleNavigation());
+  },
 
-  console.log('[Content Script] Processing video:', videoId);
+  handleNavigation() {
+    UIManager.mount();
+    this.processCurrentVideo();
+  },
 
-  // 분석 중 상태로 UI 업데이트
-  updateUI('Analysis', 'analyzing');
+  processCurrentVideo() {
+    const videoId = VideoUtils.extractId(location.href);
 
-  chrome.runtime.sendMessage({
-    type: 'NEW_VIDEO',
-    videoId,
-    url: location.href
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error("Message sending error:", chrome.runtime.lastError.message);
-      updateUI("Extension Error", 'misleading');
+    // 1. 비디오가 아니면 기본 상태 표시
+    if (!videoId) {
+      UIManager.updateState(CONFIG.TEXT.DEFAULT, CONFIG.CLASSES.DEFAULT);
       return;
     }
 
-    if (response && response.analysisResult) {
-      const { score } = response.analysisResult;
-      if (score >= 80) {
-        updateUI("Verified", "verified");
-      } else {
-        updateUI("Misleading", "misleading");
-      }
-    } else if (response && response.status) {
-        // 'Not Analyzed' 상태 처리
-        if (response.status === 'Not Analyzed') {
-            updateUI('Not Analyzed', 'not-analyzed');
-        } else {
-            updateUI(response.status, 'default');
-        }
-    } else {
-      updateUI("Analysis Error", 'misleading');
+    console.log('[Content Script] Processing video:', videoId);
+
+    // 2. 분석 중 상태로 전환
+    UIManager.updateState(CONFIG.TEXT.ANALYZING, CONFIG.CLASSES.ANALYZING);
+
+    // 3. 백그라운드 스크립트에 분석 요청
+    chrome.runtime.sendMessage({
+      type: 'NEW_VIDEO',
+      videoId,
+      url: location.href
+    }, (response) => this.handleResponse(response));
+  },
+
+  handleResponse(response) {
+    // 에러 처리
+    if (chrome.runtime.lastError) {
+      console.error("Extension Error:", chrome.runtime.lastError.message);
+      UIManager.updateState(CONFIG.TEXT.ERROR, CONFIG.CLASSES.MISLEADING);
+      return;
     }
-  });
-}
 
-// 초기화 함수
-function initialize() {
-    waitForElement('#masthead #center', () => {
-        const existingUI = document.getElementById('my-island-container');
-        if (existingUI) {
-            existingUI.remove();
-        }
-        createAndInsertUI();
-        processVideo();
-    });
-}
+    if (!response) {
+      UIManager.updateState("Analysis Error", CONFIG.CLASSES.MISLEADING);
+      return;
+    }
 
-// 최초 실행
-initialize();
+    // A. 이미 분석된 결과가 있거나 분석 완료된 경우
+    if (response.analysisResult) {
+      const { score } = response.analysisResult;
+      const isVerified = score >= CONFIG.THRESHOLDS.SAFE_SCORE;
+      
+      if (isVerified) {
+        UIManager.updateState(CONFIG.TEXT.VERIFIED, CONFIG.CLASSES.VERIFIED);
+      } else {
+        UIManager.updateState(CONFIG.TEXT.MISLEADING, CONFIG.CLASSES.MISLEADING);
+      }
+      return;
+    }
 
-// 유튜브 내 페이지 이동 시 다시 실행
-window.addEventListener('yt-navigate-finish', initialize);
+    // B. 분석하지 않음(Not Analyzed) 또는 기타 상태
+    if (response.status === 'Not Analyzed') {
+      UIManager.updateState(CONFIG.TEXT.NOT_ANALYZED, CONFIG.CLASSES.NOT_ANALYZED);
+    } else {
+      UIManager.updateState(response.status, CONFIG.CLASSES.DEFAULT);
+    }
+  }
+};
+
+// 앱 실행
+App.init();
