@@ -33,8 +33,6 @@ const CONFIG = {
   // ACCA 평가 점수 임계값
   THRESHOLDS: {
     SAFE_SCORE: 80,       // 안전하다고 판단하는 최소 점수
-    TYPE_A_CORRECTION: 85, // 제도권 언론(Type A) 보정 기준 점수
-    TYPE_A_NEW_SCORE: 95   // 보정 후 적용될 점수
   }
 };
 
@@ -350,13 +348,6 @@ async function analyzeContent(metadata, ocrText) {
     // Step 4: 결과 보정 및 포맷팅
     let finalScore = accaJson.average_score;
     let explanation = accaJson.summary_explanation;
-
-    // Type A(제도권 언론)이지만 점수가 낮게 나온 경우 강제 보정 로직
-    if (accaJson.source_type === 'A' && finalScore < CONFIG.THRESHOLDS.TYPE_A_CORRECTION) {
-      finalScore = CONFIG.THRESHOLDS.TYPE_A_NEW_SCORE;
-      accaJson.color = "green";
-      explanation = `[제도권 언론(${channelName}) 보정] ${explanation}`;
-    }
 
     // 최종 결과 객체 구성
     const finalResult = {
