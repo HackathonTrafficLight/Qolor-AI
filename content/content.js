@@ -17,7 +17,7 @@ const CONFIG = {
     MISLEADING: 'misleading'
   },
   TEXT: {
-    DEFAULT: 'YouTube<br>Reliability Analysis',
+    DEFAULT: 'Qolor AI',
     ANALYZING: 'Analysis',
     VERIFIED: 'Verified',
     MISLEADING: 'Misleading',

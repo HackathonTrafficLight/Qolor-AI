@@ -21,7 +21,7 @@ const CONFIG = {
   },
   URLS: {
     VISION: "https://vision.googleapis.com/v1/images:annotate",
-    GEMINI: "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent",
+    GEMINI: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
     SERPER_NEWS: "https://google.serper.dev/news",
     SERPER_WEB: "https://google.serper.dev/search",
   },

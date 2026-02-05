@@ -99,8 +99,6 @@
 
 /* Default 상태일 때 텍스트 스타일 조정 */
 #my-island-container.default span:last-child {
-  font-size: 12px;
-  line-height: 1.0;
   display: block;
   text-align: left;
 }
